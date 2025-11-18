@@ -1,0 +1,29 @@
+{
+  "name": "xiaozhi-mqtt-websocket-bridge",
+  "version": "1.0.0",
+  "description": "MQTT to WebSocket bridge for Xiaozhi ESP32 conversation stats",
+  "main": "auto-bridge.js",
+  "scripts": {
+    "start": "node auto-bridge.js",
+    "start:async": "node auto-bridge-async.js",
+    "dev": "nodemon auto-bridge.js",
+    "dev:async": "nodemon auto-bridge-async.js"
+  },
+  "keywords": [
+    "mqtt",
+    "websocket",
+    "xiaozhi",
+    "bridge"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "async-mqtt": "^2.6.3",
+    "express": "^4.18.2",
+    "mqtt": "^5.3.1",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

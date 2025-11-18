@@ -1,0 +1,14 @@
+{
+  "webSocketPort": 8080,
+  "httpPort": 3000,
+  "otaApiUrl": "https://api.tenclass.net/xiaozhi/ota/",
+  "boardType": "longancore-s3",
+  "boardName": "longancore-s3",
+  "devices": [
+    {
+      "deviceId": "e4:b0:63:85:96:00",
+      "clientId": "de89ac1a-9f83-4557-a6f5-f25773bf3dd4"
+    }
+  ]
+}
+

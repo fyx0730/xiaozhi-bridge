@@ -1,0 +1,51 @@
+{
+  "conversations": [
+    {
+      "sessionId": "e7c746d0",
+      "duration": 0.421,
+      "reason": "channel_closed",
+      "timestamp": 1763446202,
+      "receivedAt": 1763446202731
+    },
+    {
+      "sessionId": "0e7aa222",
+      "duration": 13.089,
+      "reason": "abort_speaking",
+      "timestamp": 1763446178,
+      "receivedAt": 1763446178373
+    },
+    {
+      "sessionId": "c17043e0",
+      "duration": 62.602,
+      "reason": "channel_closed",
+      "timestamp": 255,
+      "receivedAt": 1763438279765
+    },
+    {
+      "sessionId": "a50d623d",
+      "duration": 0.191,
+      "reason": "channel_closed",
+      "timestamp": 59,
+      "receivedAt": 1763438087970
+    },
+    {
+      "sessionId": "f20c0d51",
+      "duration": 25.191,
+      "reason": "channel_closed",
+      "timestamp": 51,
+      "receivedAt": 1763438077572
+    },
+    {
+      "sessionId": "test-123",
+      "duration": 10.5,
+      "reason": "test",
+      "timestamp": 1234567890,
+      "receivedAt": 1763436955444
+    }
+  ],
+  "stats": {
+    "totalConversations": 6,
+    "totalDuration": 111.99400000000001
+  },
+  "savedAt": 1763446202732
+}
