@@ -1,265 +1,222 @@
-# 小智AI MQTT 到 WebSocket 桥接服务
+# HTTP API 桥接服务使用说明
 
-自动化的 MQTT 到 WebSocket 桥接服务，用于将小智AI设备的对话统计消息转发到 WebSocket 客户端。
+## 概述
 
-## 功能特性
+HTTP API 桥接服务是一个简单的替代方案，避免 MQTT 连接问题。设备直接通过 HTTP POST 请求发送对话统计到桥接服务。
 
-- ✅ **自动获取配置**：从 OTA API 自动获取设备的 MQTT 配置
-- ✅ **MQTT 订阅**：自动连接 MQTT 服务器并订阅设备消息
-- ✅ **WebSocket 转发**：将对话统计消息实时转发到 WebSocket 客户端
-- ✅ **HTTP API**：提供 RESTful API 管理设备
-- ✅ **多设备支持**：支持同时监控多个设备
-- ✅ **自动重连**：MQTT 连接断开时自动重连
+## 优势
 
-## 快速开始
+- ✅ 无需 MQTT 连接
+- ✅ 更简单可靠
+- ✅ 支持本地存储
+- ✅ 提供 RESTful API
 
-### 1. 安装依赖
+## 使用方法
+
+### 1. 启动桥接服务
 
 ```bash
 cd bridge
-npm install
+./start-api.sh
 ```
 
-### 2. 运行服务
+### 2. 配置设备端
 
-#### 方式 1：命令行参数
+在设备端配置统计 API URL。可以通过以下方式：
+
+#### 方式 A: 使用 menuconfig 配置
 
 ```bash
-npm start <deviceId> <clientId>
+idf.py menuconfig
 ```
 
-示例：
-```bash
-npm start e4:b0:63:85:96:00 de89ac1a-9f83-4557-a6f5-f25773bf3dd4
+在配置中找到 `Stats API URL`，设置为：
+```
+http://your-server-ip:3000/api/conversation-stats
 ```
 
-#### 方式 2：环境变量
+#### 方式 B: 修改代码
 
-```bash
-DEVICE_ID=e4:b0:63:85:96:00 CLIENT_ID=de89ac1a-9f83-4557-a6f5-f25773bf3dd4 npm start
-```
+在 `main/protocols/protocol.cc` 中，`CONFIG_STATS_API_URL` 默认为空。如果需要，可以：
 
-#### 方式 3：先启动服务，后添加设备
+1. 在 `sdkconfig` 中添加：
+   ```
+   CONFIG_STATS_API_URL="http://your-server-ip:3000/api/conversation-stats"
+   ```
 
-```bash
-npm start
-```
+2. 或者在代码中硬编码（不推荐）
 
-然后通过 HTTP API 添加设备：
-```bash
-curl -X POST http://localhost:3000/api/add-device \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"e4:b0:63:85:96:00","clientId":"de89ac1a-9f83-4557-a6f5-f25773bf3dd4"}'
-```
+### 3. 设备端代码修改
 
-## 配置选项
+设备端代码已经支持 HTTP POST 发送。只需要配置 `CONFIG_STATS_API_URL` 即可。
 
-### 环境变量
+## API 端点
 
-- `WS_PORT` - WebSocket 服务器端口（默认：8080）
-- `HTTP_PORT` - HTTP API 端口（默认：3000）
-- `OTA_API_URL` - OTA API 地址（默认：https://api.tenclass.net/xiaozhi/ota/）
-- `BOARD_TYPE` - 设备板型（默认：longancore-s3）
-- `BOARD_NAME` - 设备名称（默认：longancore-s3）
-- `DEVICE_ID` - 设备 MAC 地址
-- `CLIENT_ID` - 设备客户端 ID
+### POST /api/conversation-stats
 
-## API 文档
+接收设备发送的对话统计。
 
-### 健康检查
-
-```bash
-GET /health
-```
-
-响应：
+**请求体：**
 ```json
 {
-  "status": "ok",
-  "mqtt": {
-    "connected": true
-  },
-  "websocket": {
-    "clients": 2
-  },
-  "stats": {
-    "mqttMessages": 10,
-    "websocketClients": 2,
-    "conversationStats": 5
-  }
-}
-```
-
-### 添加设备
-
-```bash
-POST /api/add-device
-Content-Type: application/json
-
-{
-  "deviceId": "e4:b0:63:85:96:00",
-  "clientId": "de89ac1a-9f83-4557-a6f5-f25773bf3dd4"
-}
-```
-
-响应：
-```json
-{
-  "success": true,
-  "deviceId": "e4:b0:63:85:96:00",
-  "config": {
-    "endpoint": "mqtt.xiaozhi.me",
-    "client_id": "...",
-    "username": "...",
-    "publish_topic": "..."
-  }
-}
-```
-
-### 获取统计信息
-
-```bash
-GET /api/stats
-```
-
-### 获取设备列表
-
-```bash
-GET /api/devices
-```
-
-## WebSocket 消息格式
-
-### 客户端连接
-
-连接到 `ws://localhost:8080`，会收到欢迎消息：
-
-```json
-{
-  "type": "welcome",
-  "message": "Connected to Xiaozhi Bridge",
-  "stats": {
-    "mqttMessages": 0,
-    "websocketClients": 1,
-    "conversationStats": 0
-  }
-}
-```
-
-### 对话统计消息
-
-当设备发送对话统计时，会收到：
-
-```json
-{
-  "session_id": "xxx-xxx-xxx",
-  "type": "conversation_stats",
-  "duration": 12.34,
+  "session_id": "abc123",
+  "duration": 10.5,
   "reason": "tts_stop",
   "timestamp": 1234567890
 }
 ```
 
-### 心跳
-
-客户端可以发送 ping 消息：
+**响应：**
 ```json
 {
-  "type": "ping"
+  "success": true,
+  "message": "Conversation stats received",
+  "conversation": {
+    "sessionId": "abc123",
+    "duration": 10.5,
+    "reason": "tts_stop",
+    "timestamp": 1234567890,
+    "receivedAt": 1234567890123
+  }
 }
 ```
 
-服务器会回复：
+### GET /api/conversations
+
+获取所有对话统计。
+
+**查询参数：**
+- `limit` - 返回数量限制（默认：100）
+- `offset` - 偏移量（默认：0）
+
+**响应：**
 ```json
 {
-  "type": "pong"
+  "success": true,
+  "total": 50,
+  "conversations": [...],
+  "stats": {
+    "totalConversations": 50,
+    "totalDuration": 500.5,
+    "averageDuration": 10.01
+  }
 }
 ```
 
-## 前端集成示例
+### GET /api/stats
+
+获取统计摘要。
+
+**响应：**
+```json
+{
+  "success": true,
+  "stats": {
+    "totalConversations": 50,
+    "totalDuration": 500.5,
+    "averageDuration": 10.01,
+    "maxDuration": 30.5,
+    "websocketClients": 1,
+    "apiRequests": 50
+  },
+  "conversations": [...] // 最近10条
+}
+```
+
+### DELETE /api/conversations
+
+清空所有对话统计。
+
+**响应：**
+```json
+{
+  "success": true,
+  "message": "All conversations cleared"
+}
+```
+
+## WebSocket 连接
+
+前端页面可以连接到 WebSocket 服务器：
 
 ```javascript
 const ws = new WebSocket('ws://localhost:8080');
-
-ws.onopen = () => {
-    console.log('Connected to bridge');
-};
-
 ws.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    
-    if (message.type === 'conversation_stats') {
-        console.log('Conversation stats:', {
-            sessionId: message.session_id,
-            duration: message.duration,
-            reason: message.reason,
-            timestamp: new Date(message.timestamp * 1000)
-        });
-        
-        // 更新 UI
-        updateStatsDisplay(message);
+    const data = JSON.parse(event.data);
+    if (data.type === 'conversation_stats') {
+        // 处理对话统计
     }
 };
-
-ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
-};
-
-ws.onclose = () => {
-    console.log('Disconnected from bridge');
-    // 自动重连
-    setTimeout(() => {
-        ws = new WebSocket('ws://localhost:8080');
-    }, 5000);
-};
 ```
 
-## 获取设备信息
+## 数据存储
 
-### 从串口日志获取
+对话统计会自动保存到 `conversations.json` 文件，服务重启后会自动加载。
 
-设备启动时会在串口输出：
+## 测试
+
+### 使用 curl 测试
+
+```bash
+# 发送对话统计
+curl -X POST http://localhost:3000/api/conversation-stats \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "test-123",
+    "duration": 10.5,
+    "reason": "test",
+    "timestamp": 1234567890
+  }'
+
+# 获取所有对话
+curl http://localhost:3000/api/conversations
+
+# 获取统计摘要
+curl http://localhost:3000/api/stats
 ```
-I (229) Board: UUID=de89ac1a-9f83-4557-a6f5-f25773bf3dd4 SKU=longancore-s3
-I (4409) MQTT: Connecting to endpoint mqtt.xiaozhi.me
+
+## 配置说明
+
+### 环境变量
+
+- `WS_PORT` - WebSocket 端口（默认：8080）
+- `HTTP_PORT` - HTTP API 端口（默认：3000）
+
+### 设备端配置
+
+在 `sdkconfig` 中配置：
+
+```
+CONFIG_STATS_API_URL="http://your-server-ip:3000/api/conversation-stats"
 ```
 
-- `UUID` 就是 `clientId`
-- `Device-Id` 是设备的 MAC 地址（例如：`e4:b0:63:85:96:00`）
+## 与 MQTT 方案对比
 
-### 从设备配置获取
-
-如果设备已连接，可以通过串口查看或使用 ESP-IDF 工具读取 NVS。
+| 特性 | HTTP API | MQTT |
+|------|----------|------|
+| 连接复杂度 | 简单 | 复杂 |
+| 实时性 | 轮询/推送 | 实时推送 |
+| 可靠性 | 高 | 中等 |
+| 配置难度 | 低 | 高 |
+| 服务器要求 | 低 | 需要 MQTT broker |
 
 ## 故障排查
 
-### MQTT 连接失败
+### 设备无法发送统计
 
-1. 检查设备是否已正确配置 MQTT
-2. 确认 OTA API 返回了正确的 MQTT 配置
-3. 检查网络连接和防火墙设置
+1. 检查 `CONFIG_STATS_API_URL` 是否正确配置
+2. 检查网络连接
+3. 查看设备日志中的错误信息
 
-### 收不到消息
+### 桥接服务收不到数据
 
-1. 确认设备已发送对话统计消息
-2. 检查 MQTT topic 订阅是否正确
-3. 查看服务日志确认消息是否被接收
+1. 检查服务是否运行
+2. 检查端口是否正确
+3. 查看服务日志
 
-### WebSocket 连接问题
+## 相关文件
 
-1. 确认 WebSocket 服务器端口未被占用
-2. 检查防火墙设置
-3. 查看浏览器控制台的错误信息
-
-## 开发模式
-
-使用 `nodemon` 进行开发，代码修改后自动重启：
-
-```bash
-npm run dev
-```
-
-## 许可证
-
-MIT
+- `api-bridge.js` - HTTP API 桥接服务
+- `start-api.sh` - 启动脚本
+- `conversations.json` - 数据存储文件
 
