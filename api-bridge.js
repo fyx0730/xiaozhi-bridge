@@ -31,11 +31,16 @@ class ApiBridge {
         this.options = {
             webSocketPort: options.webSocketPort || 8080,
             httpPort: options.httpPort || 3000,
-            dataFile: options.dataFile || path.join(__dirname, 'conversations.json')
+            dataFile: options.dataFile || path.join(__dirname, 'conversations.json'),
+            deviceNamesFile: options.deviceNamesFile || path.join(__dirname, 'device-names.json')
         };
+        
+        // 设备名称映射 { deviceId: deviceName }
+        this.deviceNames = new Map();
         
         // 加载历史数据
         this.loadConversations();
+        this.loadDeviceNames();
         
         this.setupExpress();
     }
@@ -44,6 +49,21 @@ class ApiBridge {
      * 配置 Express 应用
      */
     setupExpress() {
+        // 启用 CORS 支持
+        this.app.use((req, res, next) => {
+            res.header('Access-Control-Allow-Origin', '*');
+            res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+            res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+            
+            // 处理预检请求
+            if (req.method === 'OPTIONS') {
+                res.sendStatus(200);
+                return;
+            }
+            
+            next();
+        });
+        
         // 解析 JSON 请求体
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, '../docs')));
@@ -66,7 +86,7 @@ class ApiBridge {
         this.app.post('/api/conversation-stats', (req, res) => {
             this.stats.apiRequests++;
             
-            const { session_id, duration, reason, timestamp } = req.body;
+            const { device_id, session_id, duration, reason, timestamp } = req.body;
             
             // 验证必要字段
             if (typeof duration !== 'number') {
@@ -85,7 +105,11 @@ class ApiBridge {
                 validTimestamp = Math.floor(Date.now() / 1000);
             }
 
+            // 设备 ID，如果没有提供则使用 'unknown'
+            const deviceId = device_id || 'unknown';
+
             const conversation = {
+                deviceId: deviceId,
                 sessionId: session_id || 'unknown',
                 duration: duration,
                 reason: reason || 'unknown',
@@ -94,6 +118,7 @@ class ApiBridge {
             };
 
             console.log('📊 Received conversation stats:', {
+                device_id: conversation.deviceId,
                 session_id: conversation.sessionId,
                 duration: conversation.duration.toFixed(2) + 's',
                 reason: conversation.reason,
@@ -106,6 +131,7 @@ class ApiBridge {
             // 广播到 WebSocket 客户端
             this.broadcastToWebSocket({
                 type: 'conversation_stats',
+                device_id: conversation.deviceId,
                 session_id: conversation.sessionId,
                 duration: conversation.duration,
                 reason: conversation.reason,
@@ -119,45 +145,269 @@ class ApiBridge {
             });
         });
 
-        // 获取所有对话统计
+        // 获取所有对话统计（支持按设备筛选）
         this.app.get('/api/conversations', (req, res) => {
-            const { limit = 100, offset = 0 } = req.query;
+            const { limit = 100, offset = 0, device_id } = req.query;
             const start = parseInt(offset);
             const end = start + parseInt(limit);
             
+            // 如果指定了设备 ID，只返回该设备的数据
+            let filteredConversations = this.conversations;
+            if (device_id) {
+                filteredConversations = this.conversations.filter(c => c.deviceId === device_id);
+            }
+            
+            // 计算统计信息
+            const totalDuration = filteredConversations.reduce((sum, c) => sum + c.duration, 0);
+            const totalConversations = filteredConversations.length;
+            
             res.json({
                 success: true,
-                total: this.conversations.length,
-                conversations: this.conversations.slice(start, end),
+                total: filteredConversations.length,
+                conversations: filteredConversations.slice(start, end),
                 stats: {
-                    totalConversations: this.stats.totalConversations,
-                    totalDuration: this.stats.totalDuration,
-                    averageDuration: this.stats.totalConversations > 0 
-                        ? this.stats.totalDuration / this.stats.totalConversations 
+                    totalConversations: totalConversations,
+                    totalDuration: totalDuration,
+                    averageDuration: totalConversations > 0 
+                        ? totalDuration / totalConversations 
                         : 0
-                }
+                },
+                device_id: device_id || null
             });
         });
 
-        // 获取统计摘要
+        // 获取设备列表
+        this.app.get('/api/devices', (req, res) => {
+            const deviceMap = new Map();
+            
+            // 统计每个设备的数据
+            this.conversations.forEach(conv => {
+                if (!deviceMap.has(conv.deviceId)) {
+                    deviceMap.set(conv.deviceId, {
+                        deviceId: conv.deviceId,
+                        totalConversations: 0,
+                        totalDuration: 0,
+                        lastConversation: null
+                    });
+                }
+                const device = deviceMap.get(conv.deviceId);
+                device.totalConversations++;
+                device.totalDuration += conv.duration;
+                if (!device.lastConversation || conv.timestamp > device.lastConversation.timestamp) {
+                    device.lastConversation = conv;
+                }
+            });
+            
+            const devices = Array.from(deviceMap.values()).map(device => ({
+                deviceId: device.deviceId,
+                deviceName: this.deviceNames.get(device.deviceId) || null,
+                totalConversations: device.totalConversations,
+                totalDuration: device.totalDuration,
+                averageDuration: device.totalConversations > 0 
+                    ? device.totalDuration / device.totalConversations 
+                    : 0,
+                lastConversation: device.lastConversation ? {
+                    sessionId: device.lastConversation.sessionId,
+                    timestamp: device.lastConversation.timestamp
+                } : null
+            }));
+            
+            res.json({
+                success: true,
+                devices: devices,
+                totalDevices: devices.length
+            });
+        });
+
+        // 设置设备名称
+        this.app.post('/api/devices/:deviceId/name', (req, res) => {
+            const { deviceId } = req.params;
+            const { name } = req.body;
+            
+            if (!name || typeof name !== 'string' || name.trim().length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Device name is required and must be a non-empty string'
+                });
+            }
+            
+            const trimmedName = name.trim();
+            this.deviceNames.set(deviceId, trimmedName);
+            this.saveDeviceNames();
+            
+            console.log(`📝 Set device name: ${deviceId} -> ${trimmedName}`);
+            
+            res.json({
+                success: true,
+                deviceId: deviceId,
+                deviceName: trimmedName,
+                message: 'Device name updated'
+            });
+        });
+
+        // 获取设备名称
+        this.app.get('/api/devices/:deviceId/name', (req, res) => {
+            const { deviceId } = req.params;
+            const deviceName = this.deviceNames.get(deviceId);
+            
+            res.json({
+                success: true,
+                deviceId: deviceId,
+                deviceName: deviceName || null
+            });
+        });
+
+        // 获取所有设备名称
+        this.app.get('/api/device-names', (req, res) => {
+            const names = {};
+            this.deviceNames.forEach((name, deviceId) => {
+                names[deviceId] = name;
+            });
+            
+            res.json({
+                success: true,
+                deviceNames: names
+            });
+        });
+
+        // 删除设备名称
+        this.app.delete('/api/devices/:deviceId/name', (req, res) => {
+            const { deviceId } = req.params;
+            
+            if (this.deviceNames.has(deviceId)) {
+                this.deviceNames.delete(deviceId);
+                this.saveDeviceNames();
+                
+                console.log(`🗑️  Removed device name: ${deviceId}`);
+                
+                res.json({
+                    success: true,
+                    deviceId: deviceId,
+                    message: 'Device name removed'
+                });
+            } else {
+                res.status(404).json({
+                    success: false,
+                    error: 'Device name not found'
+                });
+            }
+        });
+
+        // 获取特定设备的统计
+        this.app.get('/api/devices/:deviceId/stats', (req, res) => {
+            const { deviceId } = req.params;
+            const deviceConversations = this.conversations.filter(c => c.deviceId === deviceId);
+            
+            if (deviceConversations.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Device not found'
+                });
+            }
+            
+            const totalDuration = deviceConversations.reduce((sum, c) => sum + c.duration, 0);
+            const maxDuration = Math.max(...deviceConversations.map(c => c.duration));
+            
+            res.json({
+                success: true,
+                deviceId: deviceId,
+                stats: {
+                    totalConversations: deviceConversations.length,
+                    totalDuration: totalDuration,
+                    averageDuration: totalDuration / deviceConversations.length,
+                    maxDuration: maxDuration
+                },
+                conversations: deviceConversations.slice(0, 10) // 最近10条
+            });
+        });
+
+        // 删除设备（删除该设备的所有对话记录和设备名称）
+        this.app.delete('/api/devices/:deviceId', (req, res) => {
+            const { deviceId } = req.params;
+            
+            // 统计要删除的对话数量
+            const deviceConversations = this.conversations.filter(c => c.deviceId === deviceId);
+            const deletedCount = deviceConversations.length;
+            const deletedDuration = deviceConversations.reduce((sum, c) => sum + c.duration, 0);
+            
+            // 删除该设备的所有对话记录
+            this.conversations = this.conversations.filter(c => c.deviceId !== deviceId);
+            
+            // 更新统计
+            this.stats.totalConversations -= deletedCount;
+            this.stats.totalDuration -= deletedDuration;
+            
+            // 删除设备名称（如果存在）
+            let deviceNameDeleted = false;
+            if (this.deviceNames.has(deviceId)) {
+                this.deviceNames.delete(deviceId);
+                this.saveDeviceNames();
+                deviceNameDeleted = true;
+            }
+            
+            // 保存对话记录
+            this.saveConversations();
+            
+            console.log(`🗑️  Deleted device: ${deviceId} (${deletedCount} conversations, ${deviceNameDeleted ? 'name removed' : 'no name'})`);
+            
+            res.json({
+                success: true,
+                deviceId: deviceId,
+                deletedConversations: deletedCount,
+                deletedDuration: deletedDuration,
+                deviceNameDeleted: deviceNameDeleted,
+                message: `Device deleted: ${deletedCount} conversations removed`
+            });
+        });
+
+        // 获取统计摘要（支持按设备筛选）
         this.app.get('/api/stats', (req, res) => {
-            const maxDuration = this.conversations.length > 0
-                ? Math.max(...this.conversations.map(c => c.duration))
+            const { device_id } = req.query;
+            
+            // 如果指定了设备 ID，只统计该设备的数据
+            let filteredConversations = this.conversations;
+            if (device_id) {
+                filteredConversations = this.conversations.filter(c => c.deviceId === device_id);
+            }
+            
+            const totalDuration = filteredConversations.reduce((sum, c) => sum + c.duration, 0);
+            const totalConversations = filteredConversations.length;
+            const maxDuration = filteredConversations.length > 0
+                ? Math.max(...filteredConversations.map(c => c.duration))
                 : 0;
+
+            // 获取设备列表统计
+            const deviceMap = new Map();
+            this.conversations.forEach(conv => {
+                if (!deviceMap.has(conv.deviceId)) {
+                    deviceMap.set(conv.deviceId, { count: 0, duration: 0 });
+                }
+                const device = deviceMap.get(conv.deviceId);
+                device.count++;
+                device.duration += conv.duration;
+            });
 
             res.json({
                 success: true,
                 stats: {
-                    totalConversations: this.stats.totalConversations,
-                    totalDuration: this.stats.totalDuration,
-                    averageDuration: this.stats.totalConversations > 0
-                        ? this.stats.totalDuration / this.stats.totalConversations
+                    totalConversations: totalConversations,
+                    totalDuration: totalDuration,
+                    averageDuration: totalConversations > 0
+                        ? totalDuration / totalConversations
                         : 0,
                     maxDuration: maxDuration,
                     websocketClients: this.stats.websocketClients,
-                    apiRequests: this.stats.apiRequests
+                    apiRequests: this.stats.apiRequests,
+                    totalDevices: deviceMap.size
                 },
-                conversations: this.conversations.slice(0, 10) // 最近10条
+                conversations: filteredConversations.slice(0, 10), // 最近10条
+                device_id: device_id || null,
+                devices: Array.from(deviceMap.entries()).map(([id, data]) => ({
+                    deviceId: id,
+                    deviceName: this.deviceNames.get(id) || null,
+                    totalConversations: data.count,
+                    totalDuration: data.duration
+                }))
             });
         });
 
@@ -233,6 +483,36 @@ class ApiBridge {
     }
 
     /**
+     * 加载设备名称从文件
+     */
+    loadDeviceNames() {
+        try {
+            if (fs.existsSync(this.options.deviceNamesFile)) {
+                const data = JSON.parse(fs.readFileSync(this.options.deviceNamesFile, 'utf8'));
+                this.deviceNames = new Map(Object.entries(data));
+                console.log(`✅ Loaded ${this.deviceNames.size} device names from file`);
+            } else {
+                console.log('📝 No device names file found, starting fresh');
+            }
+        } catch (error) {
+            console.error('❌ Failed to load device names:', error.message);
+            this.deviceNames = new Map();
+        }
+    }
+
+    /**
+     * 保存设备名称到文件
+     */
+    saveDeviceNames() {
+        try {
+            const data = Object.fromEntries(this.deviceNames);
+            fs.writeFileSync(this.options.deviceNamesFile, JSON.stringify(data, null, 2));
+        } catch (error) {
+            console.error('❌ Failed to save device names:', error.message);
+        }
+    }
+
+    /**
      * 启动 WebSocket 服务器
      */
     startWebSocketServer(port) {
@@ -241,6 +521,17 @@ class ApiBridge {
         this.wss.on('connection', (ws) => {
             this.stats.websocketClients++;
             console.log(`📱 WebSocket client connected (total: ${this.stats.websocketClients})`);
+
+            // 获取设备列表统计
+            const deviceMap = new Map();
+            this.conversations.forEach(conv => {
+                if (!deviceMap.has(conv.deviceId)) {
+                    deviceMap.set(conv.deviceId, { count: 0, duration: 0 });
+                }
+                const device = deviceMap.get(conv.deviceId);
+                device.count++;
+                device.duration += conv.duration;
+            });
 
             // 发送欢迎消息和当前统计
             ws.send(JSON.stringify({
@@ -251,8 +542,14 @@ class ApiBridge {
                     totalDuration: this.stats.totalDuration,
                     averageDuration: this.stats.totalConversations > 0
                         ? this.stats.totalDuration / this.stats.totalConversations
-                        : 0
-                }
+                        : 0,
+                    totalDevices: deviceMap.size
+                },
+                devices: Array.from(deviceMap.entries()).map(([id, data]) => ({
+                    deviceId: id,
+                    totalConversations: data.count,
+                    totalDuration: data.duration
+                }))
             }));
 
             // 发送最近的对话统计
@@ -260,6 +557,7 @@ class ApiBridge {
                 this.conversations.slice(0, 10).forEach(conv => {
                     ws.send(JSON.stringify({
                         type: 'conversation_stats',
+                        device_id: conv.deviceId,
                         session_id: conv.sessionId,
                         duration: conv.duration,
                         reason: conv.reason,
@@ -320,8 +618,15 @@ class ApiBridge {
             console.log(`✅ HTTP API server listening on http://localhost:${this.options.httpPort}`);
             console.log('📖 API endpoints:');
             console.log('   POST /api/conversation-stats - Receive conversation stats from device');
-            console.log('   GET  /api/conversations - Get all conversations');
-            console.log('   GET  /api/stats - Get statistics summary');
+            console.log('   GET  /api/conversations - Get all conversations (支持 ?device_id=xxx 筛选)');
+            console.log('   GET  /api/stats - Get statistics summary (支持 ?device_id=xxx 筛选)');
+            console.log('   GET  /api/devices - Get device list');
+            console.log('   GET  /api/devices/:deviceId/stats - Get device statistics');
+            console.log('   POST /api/devices/:deviceId/name - Set device name');
+            console.log('   GET  /api/devices/:deviceId/name - Get device name');
+            console.log('   GET  /api/device-names - Get all device names');
+            console.log('   DELETE /api/devices/:deviceId/name - Remove device name');
+            console.log('   DELETE /api/devices/:deviceId - Delete device (all conversations and name)');
             console.log('   DELETE /api/conversations - Clear all conversations');
             console.log('   GET  /health - Health check');
             console.log('');
@@ -347,10 +652,6 @@ async function main() {
     console.log('📝 To send conversation stats from device, POST to:');
     console.log(`   http://localhost:${bridge.options.httpPort}/api/conversation-stats`);
     console.log('');
-    console.log('   Example:');
-    console.log('   curl -X POST http://localhost:3000/api/conversation-stats \\');
-    console.log('     -H "Content-Type: application/json" \\');
-    console.log('     -d \'{"session_id":"test-123","duration":10.5,"reason":"test","timestamp":1234567890}\'');
 }
 
 // 运行主程序

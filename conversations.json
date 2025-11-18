@@ -1,6 +1,30 @@
 {
   "conversations": [
     {
+      "deviceId": "e4:b0:63:85:96:00",
+      "sessionId": "fd6d13fc",
+      "duration": 23.315,
+      "reason": "channel_closed",
+      "timestamp": 1763451901,
+      "receivedAt": 1763451901833
+    },
+    {
+      "deviceId": "e4:b0:63:85:96:00",
+      "sessionId": "53e83abf",
+      "duration": 44.969,
+      "reason": "channel_closed",
+      "timestamp": 1763448078,
+      "receivedAt": 1763448078296
+    },
+    {
+      "deviceId": "e4:b0:63:85:96:00",
+      "sessionId": "d24dd804",
+      "duration": 28.86,
+      "reason": "channel_closed",
+      "timestamp": 1763447982,
+      "receivedAt": 1763447982081
+    },
+    {
       "sessionId": "e7c746d0",
       "duration": 0.421,
       "reason": "channel_closed",
@@ -44,8 +68,8 @@
     }
   ],
   "stats": {
-    "totalConversations": 6,
-    "totalDuration": 111.99400000000001
+    "totalConversations": 9,
+    "totalDuration": 209.138
   },
-  "savedAt": 1763446202732
+  "savedAt": 1763451901858
 }
