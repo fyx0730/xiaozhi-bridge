@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小智AI对话时长统计</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .conversations-list {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .conversation-item {
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.2s;
+        }
+        
+        .conversation-item:hover {
+            background-color: #f9f9f9;
+        }
+        
+        .conversation-item:last-child {
+            border-bottom: none;
+        }
+        
+        .conversation-info {
+            flex: 1;
+        }
+        
+        .conversation-session {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 4px;
+            font-family: monospace;
+        }
+        
+        .conversation-duration {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .conversation-reason {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        .conversation-time {
+            font-size: 12px;
+            color: #999;
+            text-align: right;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status.connected {
+            background: #10b981;
+            color: white;
+        }
+        
+        .status.disconnected {
+            background: #ef4444;
+            color: white;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 16px;
+        }
+        
+        h2 {
+            color: #333;
+            margin-bottom: 16px;
+        }
+        
+        .connection-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .config-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .config-section label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .config-section input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        
+        .config-section button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .config-section button:hover {
+            background: #5568d3;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="connection-info">
+                <h1>小智AI对话时长统计</h1>
+                <span id="status" class="status disconnected">未连接</span>
+            </div>
+        </div>
+        
+        <div class="config-section">
+            <label for="wsUrl">WebSocket 桥接地址:</label>
+            <input type="text" id="wsUrl" placeholder="ws://localhost:8080" value="ws://localhost:8080">
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button type="button" onclick="connectWebSocket()">连接</button>
+                <button type="button" onclick="clearData()" style="background: #ef4444;">清空数据</button>
+            </div>
+            <div style="margin-top: 15px;">
+                <label for="deviceFilter" style="display: block; margin-bottom: 5px;">筛选设备:</label>
+                <select id="deviceFilter" onchange="filterByDevice(event)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">所有设备</option>
+                </select>
+            </div>
+            <p style="margin-top: 8px; font-size: 12px; color: #666;">
+                💡 默认连接到本地桥接服务。如果桥接服务运行在其他地址，请修改后连接。<br>
+                💡 打开浏览器控制台（F12）查看详细日志。
+            </p>
+        </div>
+        
+        <div class="devices-section" style="margin-top: 20px; padding: 15px; background: #f9fafb; border-radius: 8px;">
+            <h3 style="margin-top: 0;">设备列表</h3>
+            <div id="devicesList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;">
+                <div class="empty-state">暂无设备数据</div>
+            </div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">总对话次数</div>
+                <div class="stat-value" id="totalConversations">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">总对话时长</div>
+                <div class="stat-value" id="totalDuration">0秒</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">平均对话时长</div>
+                <div class="stat-value" id="avgDuration">0秒</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">最长对话</div>
+                <div class="stat-value" id="maxDuration">0秒</div>
+            </div>
+        </div>
+        
+        <div class="conversations-list">
+            <h2>最近对话记录</h2>
+            <div id="conversationsList">
+                <div class="empty-state">暂无对话记录</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class ConversationStats {
+            constructor() {
+                this.ws = null;
+                this.conversations = [];
+                this.totalDuration = 0;
+                this.devices = new Map(); // 设备统计
+                this.selectedDeviceId = null; // 当前选中的设备
+                this.apiUrl = 'http://localhost:3000'; // API 地址
+                this.init();
+            }
+            
+            init() {
+                // 从 localStorage 加载保存的 WebSocket URL
+                const savedUrl = localStorage.getItem('wsUrl');
+                if (savedUrl) {
+                    document.getElementById('wsUrl').value = savedUrl;
+                }
+                this.updateDisplay();
+            }
+            
+            connect(wsUrl) {
+                if (this.ws) {
+                    this.ws.close();
+                }
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    document.getElementById('status').textContent = '已连接';
+                    document.getElementById('status').className = 'status connected';
+                    
+                    // 加载设备列表
+                    this.loadDevicesFromAPI();
+                    
+                    // 发送 hello 消息（如果需要）
+                    this.ws.send(JSON.stringify({
+                        type: 'hello',
+                        version: 1,
+                        transport: 'websocket',
+                        audio_params: {
+                            format: 'opus',
+                            sample_rate: 16000,
+                            channels: 1,
+                            frame_duration: 60
+                        }
+                    }));
+                };
+                
+                this.ws.onmessage = (event) => {
+                    console.log('📥 Raw message received:', event.data);
+                    if (typeof event.data === 'string') {
+                        try {
+                            const message = JSON.parse(event.data);
+                            console.log('✅ Parsed message:', message);
+                            this.handleMessage(message);
+                        } catch (e) {
+                            console.error('❌ Failed to parse message:', e, 'Raw data:', event.data);
+                        }
+                    } else {
+                        console.warn('⚠️  Received non-string message:', typeof event.data);
+                    }
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    document.getElementById('status').textContent = '连接错误';
+                    document.getElementById('status').className = 'status disconnected';
+                };
+                
+                this.ws.onclose = () => {
+                    console.log('WebSocket closed');
+                    document.getElementById('status').textContent = '已断开';
+                    document.getElementById('status').className = 'status disconnected';
+                };
+            }
+            
+            handleMessage(message) {
+                console.log('📨 Received message:', JSON.stringify(message, null, 2));
+                
+                // 处理欢迎消息
+                if (message.type === 'welcome') {
+                    console.log('✅ Welcome message received:', message.message);
+                    if (message.stats) {
+                        console.log('📊 Bridge stats:', message.stats);
+                    }
+                    if (message.devices) {
+                        console.log('📱 Devices:', message.devices);
+                        this.updateDevicesList(message.devices);
+                    }
+                    return;
+                }
+                
+                // 处理心跳响应
+                if (message.type === 'pong') {
+                    console.log('💓 Pong received');
+                    return;
+                }
+                
+                // 处理对话统计消息
+                if (message.type === 'conversation_stats') {
+                    console.log('📊 Received conversation stats:', {
+                        device_id: message.device_id,
+                        session_id: message.session_id,
+                        duration: message.duration,
+                        reason: message.reason,
+                        timestamp: message.timestamp
+                    });
+                    
+                    // 验证必要字段
+                    if (typeof message.duration !== 'number') {
+                        console.error('❌ Invalid duration:', message.duration);
+                        return;
+                    }
+                    
+                    // 验证和修复时间戳
+                    // 如果时间戳无效（小于 2020-01-01），使用当前时间
+                    const minValidTimestamp = 1577836800; // 2020-01-01 00:00:00 UTC
+                    let validTimestamp = message.timestamp || Math.floor(Date.now() / 1000);
+                    if (validTimestamp < minValidTimestamp) {
+                        console.warn(`⚠️  Invalid timestamp ${validTimestamp}, using current time`);
+                        validTimestamp = Math.floor(Date.now() / 1000);
+                    }
+                    
+                    const deviceId = message.device_id || 'unknown';
+                    
+                    // 更新设备统计
+                    if (!this.devices.has(deviceId)) {
+                        this.devices.set(deviceId, {
+                            deviceId: deviceId,
+                            totalConversations: 0,
+                            totalDuration: 0
+                        });
+                    }
+                    const device = this.devices.get(deviceId);
+                    device.totalConversations++;
+                    device.totalDuration += message.duration;
+                    
+                    // 如果当前没有筛选设备，或者匹配当前设备，才添加到显示列表
+                    if (!this.selectedDeviceId || this.selectedDeviceId === deviceId) {
+                        this.addConversation({
+                            deviceId: deviceId,
+                            sessionId: message.session_id || 'unknown',
+                            duration: message.duration || 0,
+                            reason: message.reason || 'unknown',
+                            timestamp: validTimestamp
+                        });
+                    }
+                    
+                    // 更新设备列表显示
+                    this.updateDevicesList(Array.from(this.devices.values()));
+                } else {
+                    console.log('⚠️  Unknown message type:', message.type, message);
+                }
+            }
+            
+            addConversation(conversation) {
+                console.log('➕ Adding conversation:', conversation);
+                
+                this.conversations.unshift(conversation); // 添加到开头
+                this.totalDuration += conversation.duration;
+                
+                // 只保留最近100条记录
+                if (this.conversations.length > 100) {
+                    const removed = this.conversations.pop();
+                    this.totalDuration -= removed.duration;
+                }
+                
+                // 保存到 localStorage
+                this.saveToLocalStorage();
+                
+                // 更新显示
+                console.log('🔄 Updating display, total conversations:', this.conversations.length);
+                this.updateDisplay();
+                
+                console.log('✅ Conversation added successfully');
+            }
+            
+            getDeviceDisplayName(device) {
+                return device.deviceName || device.deviceId || 'unknown';
+            }
+            
+            updateDevicesList(devices) {
+                const devicesListEl = document.getElementById('devicesList');
+                const deviceFilterEl = document.getElementById('deviceFilter');
+                
+                if (!devicesListEl || !deviceFilterEl) return;
+                
+                // 更新设备筛选下拉框
+                const currentValue = deviceFilterEl.value;
+                deviceFilterEl.innerHTML = '<option value="">所有设备</option>';
+                devices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    const displayName = this.getDeviceDisplayName(device);
+                    option.textContent = `${displayName} (${device.totalConversations}次对话)`;
+                    if (currentValue === device.deviceId) {
+                        option.selected = true;
+                    }
+                    deviceFilterEl.appendChild(option);
+                });
+                
+                // 更新设备列表显示
+                if (devices.length === 0) {
+                    devicesListEl.innerHTML = '<div class="empty-state">暂无设备数据</div>';
+                    return;
+                }
+                
+                devicesListEl.innerHTML = devices.map(device => {
+                    const displayName = this.getDeviceDisplayName(device);
+                    return `
+                    <div class="stat-card" style="cursor: pointer; position: relative;" onclick="selectDevice('${device.deviceId}')">
+                        <div style="position: absolute; top: 10px; right: 10px; display: flex; gap: 5px;">
+                            <button type="button" onclick="event.stopPropagation(); editDeviceName('${device.deviceId}', '${(device.deviceName || '').replace(/'/g, "\\'")}')" 
+                                    style="padding: 4px 8px; font-size: 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                ${device.deviceName ? '✏️' : '➕'} 名称
+                            </button>
+                            <button type="button" onclick="event.stopPropagation(); deleteDevice('${device.deviceId}', '${displayName.replace(/'/g, "\\'")}')" 
+                                    style="padding: 4px 8px; font-size: 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                🗑️ 删除
+                            </button>
+                        </div>
+                        <div class="stat-label">${device.deviceName ? '设备名称' : '设备 ID'}</div>
+                        <div class="stat-value" style="font-size: ${device.deviceName ? '16px' : '14px'}; word-break: break-all;">
+                            ${displayName}
+                            ${device.deviceName ? `<div style="font-size: 11px; color: #999; margin-top: 4px;">${device.deviceId}</div>` : ''}
+                        </div>
+                        <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                            <div>对话次数: ${device.totalConversations}</div>
+                            <div>总时长: ${this.formatDuration(device.totalDuration)}</div>
+                            <div>平均时长: ${device.totalConversations > 0 ? this.formatDuration(device.totalDuration / device.totalConversations) : '0秒'}</div>
+                        </div>
+                    </div>
+                `;
+                }).join('');
+            }
+            
+            async setDeviceName(deviceId, name) {
+                const apiUrl = getApiUrl();
+                try {
+                    const response = await fetch(`${apiUrl}/api/devices/${encodeURIComponent(deviceId)}/name`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ name })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        console.log(`✅ Device name set: ${deviceId} -> ${name}`);
+                        // 重新加载设备列表
+                        await this.loadDevicesFromAPI();
+                        return true;
+                    } else {
+                        console.error('Failed to set device name:', data.error);
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Failed to set device name:', error);
+                    return false;
+                }
+            }
+            
+            async deleteDeviceName(deviceId) {
+                const apiUrl = getApiUrl();
+                try {
+                    const response = await fetch(`${apiUrl}/api/devices/${encodeURIComponent(deviceId)}/name`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        console.log(`✅ Device name removed: ${deviceId}`);
+                        // 重新加载设备列表
+                        await this.loadDevicesFromAPI();
+                        return true;
+                    } else {
+                        console.error('Failed to delete device name:', data.error);
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Failed to delete device name:', error);
+                    return false;
+                }
+            }
+            
+            async deleteDevice(deviceId) {
+                const apiUrl = getApiUrl();
+                try {
+                    const response = await fetch(`${apiUrl}/api/devices/${encodeURIComponent(deviceId)}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        console.log(`✅ Device deleted: ${deviceId} (${data.deletedConversations} conversations)`);
+                        
+                        // 如果删除的是当前选中的设备，清除筛选
+                        if (this.selectedDeviceId === deviceId) {
+                            this.selectedDeviceId = null;
+                            const deviceFilterEl = document.getElementById('deviceFilter');
+                            if (deviceFilterEl) deviceFilterEl.value = '';
+                        }
+                        
+                        // 从本地设备 Map 中移除
+                        this.devices.delete(deviceId);
+                        
+                        // 删除该设备的所有对话记录
+                        const beforeCount = this.conversations.length;
+                        this.conversations = this.conversations.filter(c => c.deviceId !== deviceId);
+                        const deletedCount = beforeCount - this.conversations.length;
+                        
+                        // 重新计算总时长
+                        this.totalDuration = this.conversations.reduce((sum, c) => sum + c.duration, 0);
+                        
+                        // 重新加载设备列表
+                        await this.loadDevicesFromAPI();
+                        
+                        // 更新显示
+                        this.updateDisplay();
+                        
+                        // 保存到 localStorage
+                        this.saveToLocalStorage();
+                        
+                        return true;
+                    } else {
+                        console.error('Failed to delete device:', data.error);
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Failed to delete device:', error);
+                    return false;
+                }
+            }
+            
+            async loadDevicesFromAPI() {
+                try {
+                    // 从 WebSocket URL 推断 API URL
+                    const wsUrl = document.getElementById('wsUrl')?.value || '';
+                    let apiUrl = this.apiUrl;
+                    
+                    // 如果 WebSocket URL 是 ws://localhost:8080，则 API 是 http://localhost:3000
+                    // 如果 WebSocket URL 是 ws://127.0.0.1:8080，则 API 是 http://127.0.0.1:3000
+                    if (wsUrl.includes('127.0.0.1')) {
+                        apiUrl = 'http://127.0.0.1:3000';
+                    } else if (wsUrl.includes('localhost')) {
+                        apiUrl = 'http://localhost:3000';
+                    } else {
+                        // 尝试从 WebSocket URL 提取主机和端口
+                        const wsMatch = wsUrl.match(/ws[s]?:\/\/([^:]+):(\d+)/);
+                        if (wsMatch) {
+                            const host = wsMatch[1];
+                            const wsPort = parseInt(wsMatch[2]);
+                            // API 端口通常是 WebSocket 端口 - 1000（8080 -> 3000）
+                            const apiPort = wsPort === 8080 ? 3000 : wsPort - 1000;
+                            apiUrl = `http://${host}:${apiPort}`;
+                        }
+                    }
+                    
+                    console.log(`📡 Loading devices from API: ${apiUrl}/api/devices`);
+                    const response = await fetch(`${apiUrl}/api/devices`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    if (data.success && data.devices) {
+                        console.log(`✅ Loaded ${data.devices.length} devices`);
+                        this.updateDevicesList(data.devices);
+                        // 更新本地设备 Map
+                        data.devices.forEach(device => {
+                            this.devices.set(device.deviceId, device);
+                        });
+                    }
+                } catch (error) {
+                    console.error('❌ Failed to load devices:', error);
+                    console.error('💡 Make sure the bridge service is running on port 3000');
+                }
+            }
+            
+            saveToLocalStorage() {
+                try {
+                    localStorage.setItem('conversations', JSON.stringify({
+                        conversations: this.conversations,
+                        totalDuration: this.totalDuration,
+                        selectedDeviceId: this.selectedDeviceId
+                    }));
+                } catch (e) {
+                    console.error('Failed to save to localStorage:', e);
+                }
+            }
+            
+            loadFromLocalStorage() {
+                try {
+                    const saved = localStorage.getItem('conversations');
+                    if (saved) {
+                        const data = JSON.parse(saved);
+                        this.conversations = data.conversations || [];
+                        this.totalDuration = data.totalDuration || 0;
+                        this.selectedDeviceId = data.selectedDeviceId || null;
+                        
+                        // 重建设备统计
+                        this.devices.clear();
+                        this.conversations.forEach(conv => {
+                            const deviceId = conv.deviceId || 'unknown';
+                            if (!this.devices.has(deviceId)) {
+                                this.devices.set(deviceId, {
+                                    deviceId: deviceId,
+                                    totalConversations: 0,
+                                    totalDuration: 0
+                                });
+                            }
+                            const device = this.devices.get(deviceId);
+                            device.totalConversations++;
+                            device.totalDuration += conv.duration;
+                        });
+                        
+                        this.updateDevicesList(Array.from(this.devices.values()));
+                        
+                        // 恢复设备筛选
+                        const deviceFilterEl = document.getElementById('deviceFilter');
+                        if (deviceFilterEl && this.selectedDeviceId) {
+                            deviceFilterEl.value = this.selectedDeviceId;
+                        }
+                        
+                        this.updateDisplay();
+                    }
+                } catch (e) {
+                    console.error('Failed to load from localStorage:', e);
+                }
+            }
+            
+            formatDuration(seconds) {
+                if (seconds < 60) {
+                    return seconds.toFixed(1) + '秒';
+                } else if (seconds < 3600) {
+                    const mins = Math.floor(seconds / 60);
+                    const secs = (seconds % 60).toFixed(1);
+                    return mins + '分' + secs + '秒';
+                } else {
+                    const hours = Math.floor(seconds / 3600);
+                    const mins = Math.floor((seconds % 3600) / 60);
+                    return hours + '小时' + mins + '分钟';
+                }
+            }
+            
+            formatTime(timestamp) {
+                const date = new Date(timestamp * 1000);
+                return date.toLocaleString('zh-CN');
+            }
+            
+            updateDisplay() {
+                // 根据选中的设备筛选统计
+                let filteredConversations = this.conversations;
+                if (this.selectedDeviceId) {
+                    filteredConversations = this.conversations.filter(c => c.deviceId === this.selectedDeviceId);
+                }
+                
+                const count = filteredConversations.length;
+                const total = filteredConversations.reduce((sum, c) => sum + c.duration, 0);
+                const avg = count > 0 ? total / count : 0;
+                const max = count > 0 ? Math.max(...filteredConversations.map(c => c.duration)) : 0;
+                
+                console.log('📊 Display stats:', { count, total, avg, max, deviceId: this.selectedDeviceId });
+                
+                // 更新统计卡片
+                const totalConversationsEl = document.getElementById('totalConversations');
+                const totalDurationEl = document.getElementById('totalDuration');
+                const avgDurationEl = document.getElementById('avgDuration');
+                const maxDurationEl = document.getElementById('maxDuration');
+                
+                if (totalConversationsEl) totalConversationsEl.textContent = count;
+                if (totalDurationEl) totalDurationEl.textContent = this.formatDuration(total);
+                if (avgDurationEl) avgDurationEl.textContent = this.formatDuration(avg);
+                if (maxDurationEl) maxDurationEl.textContent = this.formatDuration(max);
+                
+                // 更新对话列表
+                const listElement = document.getElementById('conversationsList');
+                if (!listElement) {
+                    console.error('❌ conversationsList element not found');
+                    return;
+                }
+                
+                if (filteredConversations.length === 0) {
+                    listElement.innerHTML = '<div class="empty-state">暂无对话记录</div>';
+                } else {
+                    listElement.innerHTML = filteredConversations.map(conv => {
+                        const device = this.devices.get(conv.deviceId);
+                        const deviceDisplayName = device ? this.getDeviceDisplayName(device) : conv.deviceId || 'unknown';
+                        return `
+                        <div class="conversation-item">
+                            <div class="conversation-info">
+                                <div class="conversation-session">设备: ${deviceDisplayName}</div>
+                                <div class="conversation-session">会话ID: ${conv.sessionId}</div>
+                                <div class="conversation-duration">${this.formatDuration(conv.duration)}</div>
+                                <div class="conversation-reason">结束原因: ${conv.reason}</div>
+                            </div>
+                            <div class="conversation-time">${this.formatTime(conv.timestamp)}</div>
+                        </div>
+                    `;
+                    }).join('');
+                }
+                
+                console.log('✅ Display updated');
+            }
+        }
+        
+        // 全局函数
+        function connectWebSocket(event) {
+            // 防止表单提交
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+            const wsUrl = document.getElementById('wsUrl').value;
+            if (!wsUrl) {
+                alert('请输入 WebSocket 地址');
+                return false;
+            }
+            
+            // 保存到 localStorage
+            localStorage.setItem('wsUrl', wsUrl);
+            
+            // 连接
+            stats.connect(wsUrl);
+            return false;
+        }
+        
+        // 清空数据
+        function clearData(event) {
+            // 防止表单提交
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+            if (confirm('确定要清空所有数据吗？')) {
+                stats.conversations = [];
+                stats.totalDuration = 0;
+                stats.devices.clear();
+                stats.selectedDeviceId = null;
+                localStorage.removeItem('conversations');
+                const deviceFilterEl = document.getElementById('deviceFilter');
+                if (deviceFilterEl) deviceFilterEl.value = '';
+                stats.updateDisplay();
+                stats.updateDevicesList([]);
+                console.log('🗑️  Data cleared');
+            }
+            return false;
+        }
+        
+        // 获取 API URL（从 WebSocket URL 推断）
+        function getApiUrl() {
+            const wsUrl = document.getElementById('wsUrl')?.value || '';
+            let apiUrl = 'http://localhost:3000';
+            
+            if (wsUrl.includes('127.0.0.1')) {
+                apiUrl = 'http://127.0.0.1:3000';
+            } else if (wsUrl.includes('localhost')) {
+                apiUrl = 'http://localhost:3000';
+            } else {
+                // 尝试从 WebSocket URL 提取主机和端口
+                const wsMatch = wsUrl.match(/ws[s]?:\/\/([^:]+):(\d+)/);
+                if (wsMatch) {
+                    const host = wsMatch[1];
+                    const wsPort = parseInt(wsMatch[2]);
+                    // API 端口通常是 WebSocket 端口 - 1000（8080 -> 3000）
+                    const apiPort = wsPort === 8080 ? 3000 : wsPort - 1000;
+                    apiUrl = `http://${host}:${apiPort}`;
+                }
+            }
+            
+            return apiUrl;
+        }
+        
+        // 筛选设备
+        async function filterByDevice(event) {
+            // 防止表单提交
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+            const deviceFilterEl = document.getElementById('deviceFilter');
+            const selectedDeviceId = deviceFilterEl ? deviceFilterEl.value : '';
+            const apiUrl = getApiUrl();
+            
+            stats.selectedDeviceId = selectedDeviceId || null;
+            
+            // 重新加载对话列表
+            if (selectedDeviceId) {
+                // 从 API 加载该设备的对话
+                try {
+                    const response = await fetch(`${apiUrl}/api/conversations?device_id=${encodeURIComponent(selectedDeviceId)}&limit=100`);
+                    const data = await response.json();
+                    if (data.success) {
+                        // 清空当前列表，重新加载
+                        stats.conversations = [];
+                        stats.totalDuration = 0;
+                        data.conversations.forEach(conv => {
+                            stats.addConversation(conv);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Failed to load device conversations:', error);
+                }
+            } else {
+                // 加载所有设备的对话
+                try {
+                    const response = await fetch(`${apiUrl}/api/conversations?limit=100`);
+                    const data = await response.json();
+                    if (data.success) {
+                        stats.conversations = [];
+                        stats.totalDuration = 0;
+                        data.conversations.forEach(conv => {
+                            stats.addConversation(conv);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Failed to load all conversations:', error);
+                }
+            }
+            
+            stats.updateDisplay();
+            return false;
+        }
+        
+        // 选择设备
+        function selectDevice(deviceId) {
+            const deviceFilterEl = document.getElementById('deviceFilter');
+            if (deviceFilterEl) {
+                deviceFilterEl.value = deviceId;
+                filterByDevice();
+            }
+        }
+        
+        // 编辑设备名称
+        function editDeviceName(deviceId, currentName) {
+            const name = prompt(`请输入设备名称（设备ID: ${deviceId}）:`, currentName || '');
+            if (name !== null) {
+                const trimmedName = name.trim();
+                if (trimmedName.length === 0) {
+                    // 如果名称为空，删除设备名称
+                    if (confirm('确定要删除设备名称吗？')) {
+                        stats.deleteDeviceName(deviceId);
+                    }
+                } else {
+                    stats.setDeviceName(deviceId, trimmedName);
+                }
+            }
+        }
+        
+        // 删除设备
+        function deleteDevice(deviceId, deviceDisplayName) {
+            const device = Array.from(stats.devices.values()).find(d => d.deviceId === deviceId);
+            const conversationCount = device ? device.totalConversations : 0;
+            
+            let confirmMessage = `确定要删除设备 "${deviceDisplayName}" 吗？\n\n`;
+            confirmMessage += `这将删除：\n`;
+            confirmMessage += `- ${conversationCount} 条对话记录\n`;
+            confirmMessage += `- 设备名称（如果已设置）\n\n`;
+            confirmMessage += `此操作不可恢复！`;
+            
+            if (confirm(confirmMessage)) {
+                stats.deleteDevice(deviceId).then(success => {
+                    if (success) {
+                        alert(`设备 "${deviceDisplayName}" 已删除`);
+                    } else {
+                        alert(`删除设备失败，请查看控制台了解详情`);
+                    }
+                });
+            }
+        }
+        
+        // 初始化
+        const stats = new ConversationStats();
+        
+        // 页面加载时从 localStorage 恢复数据
+        stats.loadFromLocalStorage();
+        
+        // 添加全局调试函数
+        window.stats = stats;
+        console.log('💡 调试提示：在控制台输入 stats 查看统计对象');
+    </script>
+</body>
+</html>
+
