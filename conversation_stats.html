@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小智AI对话时长统计</title>
+    <title>AI 展示框（小智）时长统计</title>
     <style>
         * {
             margin: 0;
@@ -466,7 +466,7 @@
         <div class="header">
             <div class="connection-info">
                 <div>
-                    <h1>小智AI对话时长统计</h1>
+                    <h1>AI 展示框（小智）时长统计</h1>
                     <p style="margin-top: 8px; font-size: 14px; color: #666;">
                         连接状态: <span id="status" class="status disconnected">未连接</span>
                     </p>
@@ -501,7 +501,7 @@
         
         <div class="ranking-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h2 style="margin: 0; color: #333;">设备使用时长排行榜</h2>
+                <h2 style="margin: 0; color: #333;">排行榜</h2>
                 <button type="button" onclick="exportRankingToExcel()" class="export-btn" id="exportRankingBtn" style="display: none;">
                     📥 导出Excel
                 </button>
@@ -926,7 +926,7 @@
                 const dateStr = now.getFullYear() + 
                                String(now.getMonth() + 1).padStart(2, '0') + 
                                String(now.getDate()).padStart(2, '0');
-                link.setAttribute('download', `设备使用时长排行榜_${dateStr}.csv`);
+                link.setAttribute('download', `排行榜_${dateStr}.csv`);
                 
                 // 触发下载
                 link.style.visibility = 'hidden';
